@@ -124,6 +124,20 @@
 			continue;
 		}
 
+		//sanitize the values used to build the command
+		$context = preg_replace('/[^a-zA-Z0-9._-]/', '', $school_bell['context']);
+		$domain_uuid = (is_uuid($school_bell['domain_uuid'])) ? $school_bell['domain_uuid'] : null;
+		$extension = preg_replace('/[^0-9a-zA-Z_*#+@.-]/', '', $school_bell['extension']);
+		$full_path = preg_replace('/[^a-zA-Z0-9._\/-]/', '', $school_bell['full_path']);
+
+		//skip the bell when the values are not valid
+		if ($domain_uuid === null || strlen($context) == 0 || strlen($extension) == 0 || strpos($full_path, '..') !== false) {
+			if ($debug) {
+				echo "Invalid bell parameters\n";
+			}
+			continue;
+		}
+
 		// We got our signal!
 		$school_bell_ring_timeout = (int)$school_bell['ring_timeout'];
 		if ($school_bell_ring_timeout > 60) {
@@ -135,11 +149,11 @@
 		$switch_cmd = "bgapi ";
 		$switch_cmd .= "originate {ignore_early_media=true,";
 		$switch_cmd .= "hangup_after_bridge=true,";
-		$switch_cmd .= "domain_name=".$school_bell['context'].",";
-		$switch_cmd .= "domain_uuid=".$school_bell['domain_uuid'].",";
+		$switch_cmd .= "domain_name=".$context.",";
+		$switch_cmd .= "domain_uuid=".$domain_uuid.",";
 		$switch_cmd .= "call_timeout=".$school_bell_ring_timeout."}";
-		$switch_cmd .= "loopback/".$school_bell['extension']."/".$school_bell['context'];
-		$switch_cmd .= " &playback(".$school_bell['full_path'].")";
+		$switch_cmd .= "loopback/".$extension."/".$context;
+		$switch_cmd .= " &playback(".$full_path.")";
 		if ($debug) {
 			echo $switch_cmd."\n";
 		}

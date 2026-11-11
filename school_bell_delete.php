@@ -48,15 +48,38 @@
 //delete the data
 	if (isset($_GET["id"]) && is_uuid($_GET["id"])) {
 
+		//validate the token
+			$token = new token;
+			if (!$token->validate($_SERVER['PHP_SELF'])) {
+				message::add($text['message-invalid_token'],'negative');
+				header('Location: school_bells.php');
+				exit;
+			}
+
 		//get the id
 			$id = $_GET["id"];
 
+		//verify the record belongs to the current domain
+			$sql = "select school_bell_uuid from v_school_bells ";
+			$sql .= "where school_bell_uuid = :school_bell_uuid ";
+			$sql .= "and domain_uuid = :domain_uuid ";
+			$parameters['school_bell_uuid'] = $id;
+			$parameters['domain_uuid'] = $_SESSION['domain_uuid'];
+			$row = $database->select($sql, $parameters, 'row');
+			unset($sql, $parameters);
+			if (empty($row)) {
+				header('Location: school_bells.php');
+				exit;
+			}
+
 		//delete bridge
 			$sql = "delete from v_school_bells ";
-			$sql .= "where school_bell_uuid = '$id' ";
-			$prep_statement = $db->prepare(check_sql($sql));
-			$prep_statement->execute();
-			unset($sql);
+			$sql .= "where school_bell_uuid = :school_bell_uuid ";
+			$sql .= "and domain_uuid = :domain_uuid ";
+			$parameters['school_bell_uuid'] = $id;
+			$parameters['domain_uuid'] = $_SESSION['domain_uuid'];
+			$database->execute($sql, $parameters);
+			unset($sql, $parameters);
 
 		//redirect the user
 			header('Location: school_bells.php');

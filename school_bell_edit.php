@@ -115,9 +115,16 @@
 //handle the http post
 	if (count($_POST) > 0 && strlen($_POST["persistformvar"]) == 0) {
 
-		$msg = '';
+		//validate the token
+		$token = new token;
+		if (!$token->validate($_SERVER['PHP_SELF'])) {
+			message::add($text['message-invalid_token'],'negative');
+			header('Location: school_bells.php');
+			exit;
+		}
 
 		//check for all required data
+		$msg = '';
 		if (strlen($school_bell_name) == 0) {
 			$msg .= $text['label-school_bell_name']."<br>\n";
 		}
@@ -186,7 +193,7 @@
 					'school_bell_description' => $school_bell_description
 				);
 
-				$prep_statement = $db->prepare(check_sql($sql));
+				$prep_statement = $db->prepare($sql);
 				$prep_statement->execute(array_values($insert_array));
 
 				unset($sql, $prep_statement, $insert_array);
@@ -248,7 +255,7 @@
 	} //(count($_POST)>0 && strlen($_POST["persistformvar"]) == 0)
 
 //pre-populate the form
-	if (count($_GET) > 0 && $_POST["persistformvar"] != "true") {
+	if (count($_GET) > 0 && $_POST["persistformvar"] != "true" && isset($_GET["id"]) && is_uuid($_GET["id"])) {
 		$school_bell_uuid = $_GET["id"];
 		$sql = "SELECT * FROM v_school_bells";
 		$sql .= " WHERE domain_uuid = :domain_uuid";
@@ -286,7 +293,7 @@
 	$sql = "SELECT recording_name, recording_filename FROM v_recordings";
 	$sql .= " WHERE domain_uuid = :domain_uuid";
 	$sql .= " ORDER BY recording_name ASC";
-	$prep_statement = $db->prepare(check_sql($sql));
+	$prep_statement = $db->prepare($sql);
 	$prep_statement->bindValue('domain_uuid', $domain_uuid);
 	$prep_statement->execute();
 	$recordings = $prep_statement->fetchAll(PDO::FETCH_ASSOC);
@@ -309,6 +316,10 @@
 	if (strlen($school_bell_timezone) == 0) {
 		$school_bell_timezone = date_default_timezone_get();
 	}
+
+//create token
+	$object = new token;
+	$token = $object->create($_SERVER['PHP_SELF']);
 
 //show the header
 	require_once "resources/header.php";
@@ -554,6 +565,7 @@
 	if ($action == "update") {
 		echo "		<input type='hidden' name='id' value='".escape($school_bell_uuid)."'>\n";
 	}
+	echo "		<input type='hidden' name='".$token['name']."' value='".$token['hash']."'>\n";
 	echo "			<br>";
 	echo "			<input type='submit' name='submit' class='btn' value='".$text['button-save']."'>\n";
 	echo "		</td>\n";

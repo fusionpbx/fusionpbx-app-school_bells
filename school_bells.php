@@ -47,13 +47,17 @@
 //set the header
 	$document['title'] = $text['title-school_bells'];
 
+//create token
+	$object = new token;
+	$token = $object->create(dirname($_SERVER['PHP_SELF']) . '/school_bell_delete.php');
+
 //additional includes
 	require_once "resources/header.php";
 	require_once "resources/paging.php";
 
 //get variables used to control the order
-	$order_by = $_GET["order_by"];
-	$order = $_GET["order"];
+	$order_by = preg_replace('#[^a-zA-Z0-9_\-]#', '', $_GET['order_by'] ?? '');
+	$order = ($_GET['order'] ?? '') === 'desc' ? 'desc' : 'asc';
 
 	//prepare to page the results
 	$sql = "SELECT count(school_bell_uuid) AS num_rows FROM v_school_bells";
@@ -69,11 +73,8 @@
 	//prepare to page the results
 	$rows_per_page = ($_SESSION['domain']['paging']['numeric'] != '') ? $_SESSION['domain']['paging']['numeric'] : 50;
 	$param = "";
-	$page = $_GET['page'];
-	if (strlen($page) == 0) {
-		$page = 0;
-		$_GET['page'] = 0;
-	}
+	$page = is_numeric($_GET['page'] ?? '') ? max(0, (int)$_GET['page']) : 0;
+	$_GET['page'] = $page;
 	list($paging_controls, $rows_per_page, $var3) = paging($num_rows, $param, $rows_per_page);
 	$offset = $rows_per_page * $page;
 
@@ -86,7 +87,7 @@
 		}
 		$sql .= " LIMIT $rows_per_page OFFSET $offset";
 
-		$prep_statement = $db->prepare(check_sql($sql));
+		$prep_statement = $db->prepare($sql);
 		$prep_statement->bindValue('domain_uuid', $domain_uuid);
 
 		$prep_statement->execute();
@@ -152,7 +153,7 @@
 				echo "<a href='school_bell_edit.php?id=".$row['school_bell_uuid']."' alt='".$text['button-edit']."'>$v_link_label_edit</a>";
 			}
 			if (permission_exists('school_bell_delete')) {
-				echo "<a href='school_bell_delete.php?id=".$row['school_bell_uuid']."' alt='".$text['button-delete']."' onclick=\"return confirm('".$text['confirm-delete']."')\">$v_link_label_delete</a>";
+				echo "<a href='school_bell_delete.php?id=".$row['school_bell_uuid']."&".$token['name']."=".$token['hash']."' alt='".$text['button-delete']."' onclick=\"return confirm('".$text['confirm-delete']."')\">$v_link_label_delete</a>";
 			}
 			echo "	</td>\n";
 			echo "</tr>\n";
