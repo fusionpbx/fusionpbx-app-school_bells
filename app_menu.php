@@ -16,4 +16,4 @@ $apps[$x]['menu'][0]['path'] = "/app/school_bells/school_bells.php";
 $apps[$x]['menu'][0]['groups'][] = "superadmin";
 $apps[$x]['menu'][0]['groups'][] = "admin";
 
-?>
+

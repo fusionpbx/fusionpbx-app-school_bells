@@ -106,5 +106,5 @@
 		$z += 1;
 		$apps[$x]['db'][$y]['fields'][$z]['name'] = "school_bell_description";
 		$apps[$x]['db'][$y]['fields'][$z]['type'] = "text";
-?>
+
 

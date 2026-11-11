@@ -26,21 +26,21 @@
 
 	$current_minute = (int)date('i', $current_timestamp);
 
-	$sql = "SELECT v_domains.domain_name AS context,";
-	$sql .= " v_school_bells.domain_uuid AS domain_uuid,";
-	$sql .= " school_bell_leg_a_data AS extension,";
-	$sql .= " school_bell_leg_b_type AS full_path,";
-	$sql .= " school_bell_ring_timeout AS ring_timeout,";
-	$sql .= " school_bell_min as min,";
-	$sql .= " school_bell_hour as hour,";
-	$sql .= " school_bell_dom as dom,";
-	$sql .= " school_bell_mon as mon,";
-	$sql .= " school_bell_dow as dow,";
+	$sql = "SELECT v_domains.domain_name AS context, ";
+	$sql .= " v_school_bells.domain_uuid AS domain_uuid, ";
+	$sql .= " school_bell_leg_a_data AS extension, ";
+	$sql .= " school_bell_leg_b_type AS full_path, ";
+	$sql .= " school_bell_ring_timeout AS ring_timeout, ";
+	$sql .= " school_bell_min as min, ";
+	$sql .= " school_bell_hour as hour, ";
+	$sql .= " school_bell_dom as dom, ";
+	$sql .= " school_bell_mon as mon, ";
+	$sql .= " school_bell_dow as dow, ";
 	$sql .= " school_bell_timezone as timezone ";
 	$sql .= "FROM v_school_bells ";
 	$sql .= "JOIN v_domains ON v_domains.domain_uuid = v_school_bells.domain_uuid ";
-	$sql .= " WHERE school_bell_min = :current_minute";
-	$sql .= " OR school_bell_min = -1";
+	$sql .= " WHERE school_bell_min = :current_minute ";
+	$sql .= " OR school_bell_min = -1 ";
 	$parameters['current_minute'] = $current_minute;
 	$database = new database;
 	$school_bells = $database->select($sql, $parameters, 'all');
@@ -65,7 +65,6 @@
 
 	$school_bells = $prep_statement->fetchAll(PDO::FETCH_NAMED);
 	*/
-	
 
 	if (count($school_bells) == 0) {
 		echo "no bells\n";

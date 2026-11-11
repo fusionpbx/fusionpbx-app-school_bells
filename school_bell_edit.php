@@ -47,29 +47,29 @@
 //action add or update
 	if (isset($_REQUEST["id"])) {
 		$action = "update";
-		$school_bell_uuid = check_str($_REQUEST["id"]);
+		$school_bell_uuid = $_REQUEST["id"];
 	} else {
 		$action = "add";
 	}
 
 //get http post variables and set them to php variables
 	if (count($_POST) > 0) {
-		$school_bell_name = check_str($_POST["school_bell_name"]);
-		$school_bell_leg_a_type = check_str($_POST["school_bell_leg_a_type"]);
-		$school_bell_leg_a_data = check_str($_POST["school_bell_leg_a_data"]);
-		$school_bell_leg_b_type = check_str($_POST["school_bell_leg_b_type"]);
-		$school_bell_leg_b_data = check_str($_POST["school_bell_leg_b_data"]);
-		$school_bell_ring_timeout = (int)check_str($_POST["school_bell_ring_timeout"]);
-		$school_bell_min = (int)check_str($_POST["school_bell_min"]);
-		$school_bell_hour = (int)check_str($_POST["school_bell_hour"]);
-		$school_bell_dom = (int)check_str($_POST["school_bell_dom"]);
-		$school_bell_mon = (int)check_str($_POST["school_bell_mon"]);
-		$school_bell_dow = (int)check_str($_POST["school_bell_dow"]);
-		$school_bell_timezone = check_str($_POST["school_bell_timezone"]);
-		$school_bell_enabled = check_str($_POST["school_bell_enabled"]);
+		$school_bell_name = $_POST["school_bell_name"];
+		$school_bell_leg_a_type = $_POST["school_bell_leg_a_type"];
+		$school_bell_leg_a_data = $_POST["school_bell_leg_a_data"];
+		$school_bell_leg_b_type = $_POST["school_bell_leg_b_type"];
+		$school_bell_leg_b_data = $_POST["school_bell_leg_b_data"];
+		$school_bell_ring_timeout = (int)$_POST["school_bell_ring_timeout"];
+		$school_bell_min = (int)$_POST["school_bell_min"];
+		$school_bell_hour = (int)$_POST["school_bell_hour"];
+		$school_bell_dom = (int)$_POST["school_bell_dom"];
+		$school_bell_mon = (int)$_POST["school_bell_mon"];
+		$school_bell_dow = (int)$_POST["school_bell_dow"];
+		$school_bell_timezone = $_POST["school_bell_timezone"];
+		$school_bell_enabled = $_POST["school_bell_enabled"];
 		$school_bell_description = $_POST["school_bell_description"];
 
-			// Filter values:
+		// Filter values:
 		if (strlen($school_bell_leg_a_type) == 0) {
 			$school_bell_leg_a_type = "loopback/";
 		}
@@ -111,6 +111,7 @@
 			$school_bell_enabled = 'true';
 		}
 	}
+
 //handle the http post
 	if (count($_POST) > 0 && strlen($_POST["persistformvar"]) == 0) {
 
@@ -313,7 +314,6 @@
 	require_once "resources/header.php";
 
 //show the content
-
 	echo "<form method='post' name='frm' action=''>\n";
 	echo "<table width='100%' border='0' cellpadding='0' cellspacing='0'>\n";
 	echo "<tr>\n";

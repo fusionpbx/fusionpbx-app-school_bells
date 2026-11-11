@@ -29,23 +29,27 @@
 	require_once dirname(__DIR__, 2) . "/resources/require.php";
 	require_once "resources/pdo.php";
 	require_once "resources/check_auth.php";
+	
 
-if (permission_exists('school_bell_view')) {
-	//access granted
-}
-else {
-	echo "access denied";
-	exit;
-}
+//check permissions
+	if (permission_exists('school_bell_view')) {
+		//access granted
+	}
+	else {
+		echo "access denied";
+		exit;
+	}
 
 //add multi-lingual support
 	$language = new text;
 	$text = $language->get();
 
-require_once "resources/header.php";
+//set the header
 	$document['title'] = $text['title-school_bells'];
 
-require_once "resources/paging.php";
+//additional includes
+	require_once "resources/header.php";
+	require_once "resources/paging.php";
 
 //get variables used to control the order
 	$order_by = $_GET["order_by"];
@@ -178,4 +182,5 @@ require_once "resources/paging.php";
 
 //include the footer
 	require_once "resources/footer.php";
+
 ?>

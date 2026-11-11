@@ -49,7 +49,7 @@
 	if (isset($_GET["id"]) && is_uuid($_GET["id"])) {
 
 		//get the id
-			$id = check_str($_GET["id"]);
+			$id = $_GET["id"];
 
 		//delete bridge
 			$sql = "delete from v_school_bells ";
@@ -61,6 +61,5 @@
 		//redirect the user
 			header('Location: school_bells.php');
 	}
-
 
 ?>
