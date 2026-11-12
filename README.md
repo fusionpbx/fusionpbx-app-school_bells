@@ -12,11 +12,14 @@ the extension answers.
 ## How it works
 
 1. A system cron job runs `school_bells_cron.php` once per minute.
-2. The script reads every row of `v_school_bells` whose **Minute** matches the current
-   minute (or is set to `*`, i.e. stored as `-1`).
+2. The script reads every enabled row of `v_school_bells` whose **Minute** matches the
+   current minute (or is set to `*`, i.e. stored as `-1`). Disabled bells are filtered
+   out by the query, so they never ring.
 3. For each candidate it compares **Hour**, **Day of month**, **Month** and
    **Day of week** against the current date/time, evaluated in the bell's own
-   **Timezone**. A field set to `*` always matches; all fields must match (AND logic).
+   **Timezone** (`school_bells::should_ring()`, which does not change the server's
+   default timezone). A field set to `*` always matches; all fields must match
+   (AND logic).
 4. For every matching bell it sends this command over the FreeSWITCH Event Socket:
 
 ```
@@ -113,8 +116,10 @@ schedules.
 
 ## Using the app
 
-Open **Applications → School Bells** to list, sort and page through your bells, then use
-the **+** icon (or click a row) to add/edit one.
+Open **Applications → School Bells** to search, sort and page through your bells, then use
+the **+** icon (or click a row) to add/edit one. Tick the check boxes in the list to
+**Copy**, **Toggle** or **Delete** several bells at once; the Enabled column can also be
+toggled from the list with a single click.
 
 ### Fields
 
@@ -130,7 +135,7 @@ the **+** icon (or click a row) to add/edit one.
 | **Month**            | January–December, or `*` for every month. |
 | **Day of the week**  | Sunday–Saturday (`0` = Sunday … `6` = Saturday), or `*` for every day of the week. |
 | **Timezone**         | Timezone this schedule is evaluated in — set it to the school's local timezone, not necessarily the server's. |
-| **Enabled**          | Intended switch for turning the schedule on or off (see *Known limitations*). |
+| **Enabled**          | Turns the schedule on or off. Disabled bells are skipped by the cron job and can be toggled from the list without opening the record. |
 | **Description**      | Free text note. |
 
 ### Scheduling rules
@@ -182,18 +187,20 @@ php /var/www/fusionpbx/app/school_bells/school_bells_cron.php
   due right now. Set **Minute** to `*` temporarily to force a match on the next run.
 - `Cannot connect to Event Socket` means FreeSWITCH is down or the event socket host,
   port or password in your configuration is wrong.
-- To see each decision (hour/day/month/weekday mismatches, the generated originate
-  command), set `$debug = true;` near the top of `school_bells_cron.php`. Remember to
-  turn it back off — with cron it writes to mail every minute.
+- To see each decision (schedule mismatches, invalid values, the generated originate
+  command) without editing the file, pass `debug`:
+
+```
+php /var/www/fusionpbx/app/school_bells/school_bells_cron.php debug
+```
+
+  Leave the argument off in the crontab entry; with cron it would write to mail every
+  minute.
 - Check that the **Called Extension** is reachable in the domain dialplan and that the
   recording exists under **Applications → Recordings**.
 
 ### Known limitations
 
-- The **Enabled** field is saved and shown in the list, but the cron script currently
-  evaluates every bell row regardless of its value. To stop a bell for now, delete it or
-  change its schedule to something that will not match (for example a specific day of
-  month).
 - One value per schedule field; no cron lists/ranges/steps.
 - Only the `loopback` leg type and recording playback action are implemented today
   (`school_bell_leg_a_type` is fixed to `loopback/`, `school_bell_leg_b_type` holds the
@@ -205,10 +212,11 @@ php /var/www/fusionpbx/app/school_bells/school_bells_cron.php
 
 | Path | Purpose |
 |------|---------|
-| `school_bells.php` | List view (sort, paging, add/edit/delete links) |
-| `school_bell_edit.php` | Add / edit form for a single bell |
-| `school_bell_delete.php` | Delete a bell (token protected, domain scoped) |
+| `school_bells.php` | List view: search, sort, paging, and bulk copy / toggle / delete |
+| `school_bell_edit.php` | Add / edit form for a single bell, with delete from the form |
+| `school_bell_delete.php` | Delete one bell (token protected, domain scoped) |
 | `school_bells_cron.php` | Command line worker run every minute by cron |
+| `resources/classes/school_bells.php` | Bulk copy / toggle / delete, schedule matching and formatting |
 | `resources/classes/school_bell_selector.php` | Builds the Minute/Hour/Day/Month dropdowns |
 | `app_config.php` | App definition: permissions and the `v_school_bells` schema |
 | `app_menu.php` | Menu entry under Applications |

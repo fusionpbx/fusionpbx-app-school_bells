@@ -1,14 +1,15 @@
 <?php
 
 	//application details
-		$apps[$x]['name'] = "School Bell";
+		$apps[$x]['name'] = "School Bells";
 		$apps[$x]['uuid'] = "aadeda26-f3b5-4114-96f4-a7591f069fdf";
 		$apps[$x]['category'] = "Switch";
 		$apps[$x]['subcategory'] = "";
-		$apps[$x]['version'] = "";
+		$apps[$x]['version'] = "1.2";
 		$apps[$x]['license'] = "Mozilla Public License 1.1";
 		$apps[$x]['url'] = "http://www.fusionpbx.com";
 		$apps[$x]['description']['en-us'] = "Provide an ability to set up bells scheduler for schools";
+		$apps[$x]['description']['en-gb'] = "Provide an ability to set up bells scheduler for schools";
 		$apps[$x]['description']['es-cl'] = "";
 		$apps[$x]['description']['de-de'] = "";
 		$apps[$x]['description']['de-ch'] = "";
@@ -25,26 +26,32 @@
 		$apps[$x]['permissions'][$y]['menu']['uuid'] = "fd29e39c-c936-f5fc-8e2b-611681b266b5";
 		$apps[$x]['permissions'][$y]['groups'][] = "superadmin";
 		$apps[$x]['permissions'][$y]['groups'][] = "admin";
-		$y += 1;
+		$y++;
 		$apps[$x]['permissions'][$y]['name'] = "school_bell_add";
 		$apps[$x]['permissions'][$y]['groups'][] = "superadmin";
 		$apps[$x]['permissions'][$y]['groups'][] = "admin";
-		$y += 1;
+		$y++;
 		$apps[$x]['permissions'][$y]['name'] = "school_bell_edit";
 		$apps[$x]['permissions'][$y]['groups'][] = "superadmin";
 		$apps[$x]['permissions'][$y]['groups'][] = "admin";
-		$y += 1;
+		$y++;
 		$apps[$x]['permissions'][$y]['name'] = "school_bell_delete";
 		$apps[$x]['permissions'][$y]['groups'][] = "superadmin";
 		$apps[$x]['permissions'][$y]['groups'][] = "admin";
-		$y += 1;
+		$y++;
 
 	//schema details
 		$y = 0; //table array index
 		$z = 0; //field array index
 		$apps[$x]['db'][$y]['table']['name'] = "v_school_bells";
 		$apps[$x]['db'][$y]['table']['parent'] = "";
-		
+
+		$apps[$x]['db'][$y]['fields'][$z]['name'] = "school_bell_uuid";
+		$apps[$x]['db'][$y]['fields'][$z]['type']['pgsql'] = "uuid";
+		$apps[$x]['db'][$y]['fields'][$z]['type']['sqlite'] = "text";
+		$apps[$x]['db'][$y]['fields'][$z]['type']['mysql'] = "char(36)";
+		$apps[$x]['db'][$y]['fields'][$z]['key']['type'] = "primary";
+		$z++;
 		$apps[$x]['db'][$y]['fields'][$z]['name'] = "domain_uuid";
 		$apps[$x]['db'][$y]['fields'][$z]['type']['pgsql'] = "uuid";
 		$apps[$x]['db'][$y]['fields'][$z]['type']['sqlite'] = "text";
@@ -52,59 +59,90 @@
 		$apps[$x]['db'][$y]['fields'][$z]['key']['type'] = "foreign";
 		$apps[$x]['db'][$y]['fields'][$z]['key']['reference']['table'] = "v_domains";
 		$apps[$x]['db'][$y]['fields'][$z]['key']['reference']['field'] = "domain_uuid";
-		$z += 1;
-		$apps[$x]['db'][$y]['fields'][$z]['name'] = "school_bell_uuid";
-		$apps[$x]['db'][$y]['fields'][$z]['type']['pgsql'] = "uuid";
-		$apps[$x]['db'][$y]['fields'][$z]['type']['sqlite'] = "text";
-		$apps[$x]['db'][$y]['fields'][$z]['type']['mysql'] = "char(36)";
-		$apps[$x]['db'][$y]['fields'][$z]['key']['type'] = "primary";
-		$z += 1;
+		$z++;
 		$apps[$x]['db'][$y]['fields'][$z]['name'] = "school_bell_name";
 		$apps[$x]['db'][$y]['fields'][$z]['type'] = "text";
-		$z += 1;
-		//$apps[$x]['db'][$y]['fields'][$z]['name'] = "school_bell_function_code";
-		//$apps[$x]['db'][$y]['fields'][$z]['type'] = "text";
-		//$z += 1;
+		$apps[$x]['db'][$y]['fields'][$z]['search'] = "true";
+		$apps[$x]['db'][$y]['fields'][$z]['description']['en-us'] = "Enter the name of this schedule.";
+		$z++;
 		$apps[$x]['db'][$y]['fields'][$z]['name'] = "school_bell_leg_a_type";
 		$apps[$x]['db'][$y]['fields'][$z]['type'] = "text";
 		$apps[$x]['db'][$y]['fields'][$z]['description']['en-us'] = "By now only loopback";
-		$z += 1;
+		$z++;
 		$apps[$x]['db'][$y]['fields'][$z]['name'] = "school_bell_leg_a_data";
 		$apps[$x]['db'][$y]['fields'][$z]['type'] = "text";
-		$z += 1;
+		$apps[$x]['db'][$y]['fields'][$z]['search'] = "true";
+		$apps[$x]['db'][$y]['fields'][$z]['description']['en-us'] = "The extension to be called on schedule.";
+		$z++;
 		$apps[$x]['db'][$y]['fields'][$z]['name'] = "school_bell_leg_b_type";
 		$apps[$x]['db'][$y]['fields'][$z]['type'] = "text";
 		$apps[$x]['db'][$y]['fields'][$z]['description']['en-us'] = "By now - recording";
-		$z += 1;
+		$z++;
 		$apps[$x]['db'][$y]['fields'][$z]['name'] = "school_bell_leg_b_data";
 		$apps[$x]['db'][$y]['fields'][$z]['type'] = "text";
-		$z += 1;
+		$apps[$x]['db'][$y]['fields'][$z]['description']['en-us'] = "The recording to be played when the extension answers.";
+		$z++;
 		$apps[$x]['db'][$y]['fields'][$z]['name'] = "school_bell_ring_timeout";
 		$apps[$x]['db'][$y]['fields'][$z]['type'] = "numeric";
-		$z += 1;
-		// Next will go cron-type of description. But limited to only 1 selection
+		$apps[$x]['db'][$y]['fields'][$z]['description']['en-us'] = "Seconds the extension rings before the call gives up.";
+		$z++;
+		//cron type of description, limited to one selection per field, -1 means every value
 		$apps[$x]['db'][$y]['fields'][$z]['name'] = "school_bell_min";
 		$apps[$x]['db'][$y]['fields'][$z]['type'] = "numeric";
-		$z += 1;
+		$apps[$x]['db'][$y]['fields'][$z]['description']['en-us'] = "Minute of the hour, -1 means every minute.";
+		$z++;
 		$apps[$x]['db'][$y]['fields'][$z]['name'] = "school_bell_hour";
 		$apps[$x]['db'][$y]['fields'][$z]['type'] = "numeric";
-		$z += 1;
+		$apps[$x]['db'][$y]['fields'][$z]['description']['en-us'] = "Hour of the day, -1 means every hour.";
+		$z++;
 		$apps[$x]['db'][$y]['fields'][$z]['name'] = "school_bell_dom";
 		$apps[$x]['db'][$y]['fields'][$z]['type'] = "numeric";
-		$z += 1;
+		$apps[$x]['db'][$y]['fields'][$z]['description']['en-us'] = "Day of the month, -1 means every day.";
+		$z++;
 		$apps[$x]['db'][$y]['fields'][$z]['name'] = "school_bell_mon";
 		$apps[$x]['db'][$y]['fields'][$z]['type'] = "numeric";
-		$z += 1;
+		$apps[$x]['db'][$y]['fields'][$z]['description']['en-us'] = "Month of the year, -1 means every month.";
+		$z++;
 		$apps[$x]['db'][$y]['fields'][$z]['name'] = "school_bell_dow";
 		$apps[$x]['db'][$y]['fields'][$z]['type'] = "numeric";
-		$z += 1;
+		$apps[$x]['db'][$y]['fields'][$z]['description']['en-us'] = "Day of the week, -1 means every day of the week.";
+		$z++;
 		$apps[$x]['db'][$y]['fields'][$z]['name'] = "school_bell_timezone";
 		$apps[$x]['db'][$y]['fields'][$z]['type'] = "text";
-		$z += 1;
+		$apps[$x]['db'][$y]['fields'][$z]['description']['en-us'] = "Timezone the schedule is evaluated in.";
+		$z++;
 		$apps[$x]['db'][$y]['fields'][$z]['name'] = "school_bell_enabled";
-		$apps[$x]['db'][$y]['fields'][$z]['type'] = "text";
-		$z += 1;
+		$apps[$x]['db'][$y]['fields'][$z]['type'] = "boolean";
+		$apps[$x]['db'][$y]['fields'][$z]['toggle'] = ['true','false'];
+		$apps[$x]['db'][$y]['fields'][$z]['description']['en-us'] = "Set the status of this schedule.";
+		$z++;
 		$apps[$x]['db'][$y]['fields'][$z]['name'] = "school_bell_description";
 		$apps[$x]['db'][$y]['fields'][$z]['type'] = "text";
+		$apps[$x]['db'][$y]['fields'][$z]['search'] = "true";
+		$apps[$x]['db'][$y]['fields'][$z]['description']['en-us'] = "Enter the description.";
+		$z++;
+		$apps[$x]['db'][$y]['fields'][$z]['name'] = "insert_date";
+		$apps[$x]['db'][$y]['fields'][$z]['type']['pgsql'] = 'timestamptz';
+		$apps[$x]['db'][$y]['fields'][$z]['type']['sqlite'] = 'date';
+		$apps[$x]['db'][$y]['fields'][$z]['type']['mysql'] = 'date';
+		$apps[$x]['db'][$y]['fields'][$z]['description']['en-us'] = "";
+		$z++;
+		$apps[$x]['db'][$y]['fields'][$z]['name'] = "insert_user";
+		$apps[$x]['db'][$y]['fields'][$z]['type']['pgsql'] = "uuid";
+		$apps[$x]['db'][$y]['fields'][$z]['type']['sqlite'] = "text";
+		$apps[$x]['db'][$y]['fields'][$z]['type']['mysql'] = "char(36)";
+		$apps[$x]['db'][$y]['fields'][$z]['description']['en-us'] = "";
+		$z++;
+		$apps[$x]['db'][$y]['fields'][$z]['name'] = "update_date";
+		$apps[$x]['db'][$y]['fields'][$z]['type']['pgsql'] = 'timestamptz';
+		$apps[$x]['db'][$y]['fields'][$z]['type']['sqlite'] = 'date';
+		$apps[$x]['db'][$y]['fields'][$z]['type']['mysql'] = 'date';
+		$apps[$x]['db'][$y]['fields'][$z]['description']['en-us'] = "";
+		$z++;
+		$apps[$x]['db'][$y]['fields'][$z]['name'] = "update_user";
+		$apps[$x]['db'][$y]['fields'][$z]['type']['pgsql'] = "uuid";
+		$apps[$x]['db'][$y]['fields'][$z]['type']['sqlite'] = "text";
+		$apps[$x]['db'][$y]['fields'][$z]['type']['mysql'] = "char(36)";
+		$apps[$x]['db'][$y]['fields'][$z]['description']['en-us'] = "";
 
-
+?>

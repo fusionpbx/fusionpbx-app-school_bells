@@ -17,7 +17,7 @@
 
 	The Initial Developer of the Original Code is
 	Mark J Crane <markjcrane@fusionpbx.com>
-	Portions created by the Initial Developer are Copyright (C) 2008-2025
+	Portions created by the Initial Developer are Copyright (C) 2008-2026
 	the Initial Developer. All Rights Reserved.
 
 	Contributor(s):
@@ -26,14 +26,10 @@
 
 //includes files
 	require_once dirname(__DIR__, 2) . "/resources/require.php";
-	require_once "resources/pdo.php";
 	require_once "resources/check_auth.php";
 
 //check permissions
-	if (permission_exists('school_bell_delete')) {
-		//access granted
-	}
-	else {
+	if (!permission_exists('school_bell_delete')) {
 		echo "access denied";
 		exit;
 	}
@@ -42,8 +38,26 @@
 	$language = new text;
 	$text = $language->get();
 
-//delete the message
-	message::add($text['message-delete']);
+//keep the current view of the list page when returning
+	$page = is_numeric($_GET['page'] ?? '') ? max(0, (int)$_GET['page']) : 0;
+	$order_by = preg_replace('#[^a-zA-Z0-9_\-]#', '', $_GET['order_by'] ?? '');
+	$order = ($_GET['order'] ?? '') === 'desc' ? 'desc' : 'asc';
+	$search = $_GET['search'] ?? '';
+
+	$param = [];
+	if (!empty($page)) {
+		$param['page'] = $page;
+	}
+	if (!empty($_GET['order_by'])) {
+		$param['order_by'] = $order_by;
+	}
+	if (!empty($_GET['order'])) {
+		$param['order'] = $order;
+	}
+	if (!empty($search)) {
+		$param['search'] = $search;
+	}
+	$query_string = http_build_query($param);
 
 //delete the data
 	if (isset($_GET["id"]) && is_uuid($_GET["id"])) {
@@ -68,11 +82,11 @@
 			$row = $database->select($sql, $parameters, 'row');
 			unset($sql, $parameters);
 			if (empty($row)) {
-				header('Location: school_bells.php');
+				header('Location: school_bells.php'.($query_string ? '?'.$query_string : ''));
 				exit;
 			}
 
-		//delete bridge
+		//delete the school bell
 			$sql = "delete from v_school_bells ";
 			$sql .= "where school_bell_uuid = :school_bell_uuid ";
 			$sql .= "and domain_uuid = :domain_uuid ";
@@ -81,8 +95,11 @@
 			$database->execute($sql, $parameters);
 			unset($sql, $parameters);
 
-		//redirect the user
-			header('Location: school_bells.php');
+		//set the message
+			message::add($text['message-delete']);
 	}
+
+//redirect the user
+	header('Location: school_bells.php'.($query_string ? '?'.$query_string : ''));
 
 ?>

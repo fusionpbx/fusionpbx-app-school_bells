@@ -17,7 +17,7 @@
 
 	The Initial Developer of the Original Code is
 	Mark J Crane <markjcrane@fusionpbx.com>
-	Portions created by the Initial Developer are Copyright (C) 2008-2025
+	Portions created by the Initial Developer are Copyright (C) 2008-2026
 	the Initial Developer. All Rights Reserved.
 
 	Contributor(s):
@@ -27,13 +27,10 @@
 
 //includes files
 	require_once dirname(__DIR__, 2) . "/resources/require.php";
-	require_once "resources/pdo.php";
 	require_once "resources/check_auth.php";
 
 //check permissions
-	if (permission_exists('school_bell_edit') || permission_exists('school_bell_add')) {
-		//access granted
-	} else {
+	if (!(permission_exists('school_bell_edit') || permission_exists('school_bell_add'))) {
 		echo "access denied";
 		exit;
 	}
@@ -42,118 +39,187 @@
 	$language = new text;
 	$text = $language->get();
 
-// Get timezones
-	$timezone_identifiers_list = timezone_identifiers_list();
-//action add or update
-	if (isset($_REQUEST["id"])) {
-		$action = "update";
-		$school_bell_uuid = $_REQUEST["id"];
-	} else {
-		$action = "add";
+//set variables from the get parameters
+	$page = is_numeric($_GET['page'] ?? '') ? max(0, (int)$_GET['page']) : 0;
+	$order_by = preg_replace('#[^a-zA-Z0-9_\-]#', '', $_GET['order_by'] ?? '');
+	$order = ($_GET['order'] ?? '') === 'desc' ? 'desc' : 'asc';
+	$search = $_GET['search'] ?? '';
+
+//build the query string, used to return to the same view of the list page
+	$param = [];
+	if (!empty($page)) {
+		$param['page'] = $page;
 	}
+	if (!empty($_GET['order_by'])) {
+		$param['order_by'] = $order_by;
+	}
+	if (!empty($_GET['order'])) {
+		$param['order'] = $order;
+	}
+	if (!empty($search)) {
+		$param['search'] = $search;
+	}
+	$query_string = http_build_query($param);
+
+//action add or update
+	if (!empty($_REQUEST['id']) && is_uuid($_REQUEST['id'])) {
+		$action = 'update';
+		$school_bell_uuid = $_REQUEST['id'];
+	}
+	else {
+		$action = 'add';
+	}
+
+//set the defaults
+	$school_bell_uuid = $school_bell_uuid ?? '';
+	$school_bell_name = '';
+	$school_bell_leg_a_type = 'loopback/';
+	$school_bell_leg_a_data = '';
+	$school_bell_leg_b_type = '';
+	$school_bell_leg_b_data = '';
+	$school_bell_ring_timeout = 3;
+	$school_bell_min = -1;
+	$school_bell_hour = -1;
+	$school_bell_dom = -1;
+	$school_bell_mon = -1;
+	$school_bell_dow = -1;
+	$school_bell_timezone = date_default_timezone_get();
+	$school_bell_enabled = 'true';
+	$school_bell_description = '';
+
+//the recordings directory, used to store the full path of the selected recording
+	$recordings_dir = $settings->get('switch', 'recordings', '/var/lib/freeswitch/recordings')."/".$_SESSION['domain_name'];
+
+//get the timezones
+	$timezone_identifiers_list = timezone_identifiers_list();
 
 //get http post variables and set them to php variables
-	if (count($_POST) > 0) {
-		$school_bell_name = $_POST["school_bell_name"];
-		$school_bell_leg_a_type = $_POST["school_bell_leg_a_type"];
-		$school_bell_leg_a_data = $_POST["school_bell_leg_a_data"];
-		$school_bell_leg_b_type = $_POST["school_bell_leg_b_type"];
-		$school_bell_leg_b_data = $_POST["school_bell_leg_b_data"];
-		$school_bell_ring_timeout = (int)$_POST["school_bell_ring_timeout"];
-		$school_bell_min = (int)$_POST["school_bell_min"];
-		$school_bell_hour = (int)$_POST["school_bell_hour"];
-		$school_bell_dom = (int)$_POST["school_bell_dom"];
-		$school_bell_mon = (int)$_POST["school_bell_mon"];
-		$school_bell_dow = (int)$_POST["school_bell_dow"];
-		$school_bell_timezone = $_POST["school_bell_timezone"];
-		$school_bell_enabled = $_POST["school_bell_enabled"];
-		$school_bell_description = $_POST["school_bell_description"];
+	if (!empty($_POST)) {
+		$school_bell_name = $_POST['school_bell_name'] ?? null;
+		$school_bell_leg_a_data = $_POST['school_bell_leg_a_data'] ?? null;
+		$school_bell_leg_b_data = $_POST['school_bell_leg_b_data'] ?? null;
+		$school_bell_ring_timeout = (int)($_POST['school_bell_ring_timeout'] ?? 3);
+		$school_bell_min = (int)($_POST['school_bell_min'] ?? -1);
+		$school_bell_hour = (int)($_POST['school_bell_hour'] ?? -1);
+		$school_bell_dom = (int)($_POST['school_bell_dom'] ?? -1);
+		$school_bell_mon = (int)($_POST['school_bell_mon'] ?? -1);
+		$school_bell_dow = (int)($_POST['school_bell_dow'] ?? -1);
+		$school_bell_timezone = $_POST['school_bell_timezone'] ?? null;
+		$school_bell_enabled = $_POST['school_bell_enabled'] ?? 'true';
+		$school_bell_description = $_POST['school_bell_description'] ?? null;
 
-		// Filter values:
-		if (strlen($school_bell_leg_a_type) == 0) {
-			$school_bell_leg_a_type = "loopback/";
-		}
+		//the leg types are fixed for now, the extension is called with loopback and
+		//the recording is played back from its full path on the switch
+			$school_bell_leg_a_type = 'loopback/';
+			$school_bell_leg_b_type = '';
+			if (strlen($school_bell_leg_b_data ?? '') > 0) {
+				//a value that is already an absolute path is stored as it is, a bare file
+				//name gets the recordings directory of the domain prepended
+				if ($school_bell_leg_b_data[0] === '/') {
+					$school_bell_leg_b_type = $school_bell_leg_b_data;
+				}
+				else {
+					$school_bell_leg_b_type = $recordings_dir."/".$school_bell_leg_b_data;
+				}
+			}
 
-		if (strlen($school_bell_leg_b_data) > 0) {
-			$school_bell_leg_b_type = $_SESSION['switch']['recordings']['dir']."/".$_SESSION['domain_name']."/".$school_bell_leg_b_data;
-		}
+		//set the default ring timeout to 3 seconds and keep it in a sane range
+			if ($school_bell_ring_timeout < 0) {
+				$school_bell_ring_timeout = 3;
+			}
+			if ($school_bell_ring_timeout > 3600) {
+				$school_bell_ring_timeout = 3600;
+			}
 
-		// Set default ring timeout to 3 sec
-		if ($school_bell_ring_timeout < 0) {
-			$school_bell_ring_timeout = 3;
-		}
+		//validate the schedule fields, -1 means every value
+			if ($school_bell_min != -1 && ($school_bell_min > 59 || $school_bell_min < 0)) {
+				$school_bell_min = 0;
+			}
+			if ($school_bell_hour != -1 && ($school_bell_hour < 0 || $school_bell_hour > 23)) {
+				$school_bell_hour = 0;
+			}
+			if ($school_bell_dom != -1 && ($school_bell_dom < 1 || $school_bell_dom > 31)) {
+				$school_bell_dom = 1;
+			}
+			if ($school_bell_mon != -1 && ($school_bell_mon < 1 || $school_bell_mon > 12)) {
+				$school_bell_mon = 1;
+			}
+			if ($school_bell_dow != -1 && ($school_bell_dow < 0 || $school_bell_dow > 6)) {
+				$school_bell_dow = 0;
+			}
 
-		if ($school_bell_min != -1 && ($school_bell_min > 59 || $school_bell_min < 0)) {
-			$school_bell_min = 0;
-		}
+		//validate the timezone
+			if (!in_array($school_bell_timezone, $timezone_identifiers_list, true)) {
+				$school_bell_timezone = date_default_timezone_get();
+			}
 
-		if ($school_bell_hour != -1 && ($school_bell_hour < 0 || $school_bell_hour > 23)) {
-			$school_bell_hour = 0;
-		}
-
-		if ($school_bell_dom != -1 && ($school_bell_dom < 1 || $school_bell_dom > 31)) {
-			$school_bell_dom = 1;
-		}
-
-		if ($school_bell_mon != -1 && ($school_bell_mon < 1 || $school_bell_mon > 12)) {
-			$school_bell_mon = 1;
-		}
-
-		if ($school_bell_dow != -1 && ($school_bell_dow < 0 || $school_bell_dow > 6)) {
-			$school_bell_dow = 0;
-		}
-
-		if (!in_array($school_bell_timezone, $timezone_identifiers_list)) {
-			$school_bell_timezone = date_default_timezone_get();
-		}
-
-		if (strlen($school_bell_enabled) == 0) {
-			$school_bell_enabled = 'true';
-		}
+		//normalize the enabled field
+			if (strlen($school_bell_enabled ?? '') == 0) {
+				$school_bell_enabled = 'true';
+			}
 	}
 
-//handle the http post
-	if (count($_POST) > 0 && strlen($_POST["persistformvar"]) == 0) {
+//process the user data and save it to the database
+	if (!empty($_POST) && empty($_POST['persistformvar'])) {
+
+		//delete the school bell
+			if (permission_exists('school_bell_delete')) {
+				if (($_POST['action'] ?? '') == 'delete' && is_uuid($school_bell_uuid)) {
+					//prepare
+						$array[0]['checked'] = 'true';
+						$array[0]['uuid'] = $school_bell_uuid;
+					//delete
+						$obj = new school_bells;
+						$obj->delete($array);
+					//redirect
+						header('Location: school_bells.php'.($query_string ? '?'.$query_string : ''));
+						exit;
+				}
+			}
+
+		//get the uuid from the post
+			if ($action == 'update') {
+				$school_bell_uuid = $_POST['school_bell_uuid'] ?? $school_bell_uuid;
+			}
 
 		//validate the token
-		$token = new token;
-		if (!$token->validate($_SERVER['PHP_SELF'])) {
-			message::add($text['message-invalid_token'],'negative');
-			header('Location: school_bells.php');
-			exit;
-		}
+			$token = new token;
+			if (!$token->validate($_SERVER['PHP_SELF'])) {
+				message::add($text['message-invalid_token'],'negative');
+				header('Location: school_bells.php'.($query_string ? '?'.$query_string : ''));
+				exit;
+			}
 
 		//check for all required data
-		$msg = '';
-		if (strlen($school_bell_name) == 0) {
-			$msg .= $text['label-school_bell_name']."<br>\n";
-		}
-		if (strlen($school_bell_leg_a_data) == 0) {
-			$msg .= $text['label-school_bell_leg_a_data']."<br>\n";
-		}
+			$msg = '';
+			if (empty($school_bell_name)) { $msg .= $text['message-required']." ".$text['label-school_bell_name']."<br>\n"; }
+			if (empty($school_bell_leg_a_data)) { $msg .= $text['message-required']." ".$text['label-school_bell_leg_a_data']."<br>\n"; }
+			if (!empty($msg) && empty($_POST['persistformvar'])) {
+				require_once "resources/header.php";
+				require_once "resources/persist_form_var.php";
+				echo "<div align='center'>\n";
+				echo "<table><tr><td>\n";
+				echo $msg."<br />";
+				echo "</td></tr></table>\n";
+				persistformvar($_POST);
+				echo "</div>\n";
+				require_once "resources/footer.php";
+				return;
+			}
 
-		if (strlen($msg) > 0 && strlen($_POST["persistformvar"]) == 0) {
-			require_once "resources/header.php";
-			require_once "resources/persist_form_var.php";
-			echo "<div align='center'>\n";
-			echo "<table><tr><td>\n";
-			echo $msg."<br />";
-			echo "</td></tr></table>\n";
-			persistformvar($_POST);
-			echo "</div>\n";
-			require_once "resources/footer.php";
-			return;
-		}
-
-	//add or update the database
-		if (($_POST["persistformvar"] != "true") > 0) {
-
-			if ($action == "add") {
-
+		//add the school_bell_uuid
+			if (empty($school_bell_uuid) || !is_uuid($school_bell_uuid)) {
 				$school_bell_uuid = uuid();
+			}
 
-				$sql = "INSERT INTO v_school_bells";
-				$sql .= " (";
+		//the called extension is used to build the originate command, keep it clean
+			$school_bell_leg_a_data = preg_replace('/[^0-9a-zA-Z_*#+@.-]/', '', (string)$school_bell_leg_a_data);
+
+		if ($action == 'add') {
+
+			//add the record with bound parameters so a stored value cannot change the statement
+				$sql = "INSERT INTO v_school_bells ";
+				$sql .= "(";
 				$sql .= "domain_uuid, ";
 				$sql .= "school_bell_uuid, ";
 				$sql .= "school_bell_name, ";
@@ -169,42 +235,53 @@
 				$sql .= "school_bell_dow, ";
 				$sql .= "school_bell_timezone, ";
 				$sql .= "school_bell_enabled, ";
-				$sql .= "school_bell_description ";
+				$sql .= "school_bell_description, ";
+				$sql .= "insert_date, ";
+				$sql .= "insert_user, ";
+				$sql .= "update_date, ";
+				$sql .= "update_user ";
 				$sql .= ") ";
 				$sql .= "VALUES ";
-				$sql .= "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+				$sql .= "(:domain_uuid, :school_bell_uuid, :school_bell_name, :school_bell_leg_a_type, ";
+				$sql .= ":school_bell_leg_a_data, :school_bell_leg_b_type, :school_bell_leg_b_data, ";
+				$sql .= ":school_bell_ring_timeout, :school_bell_min, :school_bell_hour, :school_bell_dom, ";
+				$sql .= ":school_bell_mon, :school_bell_dow, :school_bell_timezone, :school_bell_enabled, ";
+				$sql .= ":school_bell_description, now(), :insert_user, now(), :update_user)";
 
-				$insert_array = array(
-					'domain_uuid' => $domain_uuid,
-					'school_bell_uuid' => $school_bell_uuid,
-					'school_bell_name' => $school_bell_name,
-					'school_bell_leg_a_type' => $school_bell_leg_a_type,
-					'school_bell_leg_a_data' => $school_bell_leg_a_data,
-					'school_bell_leg_b_type' => $school_bell_leg_b_type,
-					'school_bell_leg_b_data' => $school_bell_leg_b_data,
-					'school_bell_ring_timeout' => $school_bell_ring_timeout,
-					'school_bell_min' => $school_bell_min,
-					'school_bell_hour' => $school_bell_hour,
-					'school_bell_dom' => $school_bell_dom,
-					'school_bell_mon' => $school_bell_mon,
-					'school_bell_dow' => $school_bell_dow,
-					'school_bell_timezone' => $school_bell_timezone,
-					'school_bell_enabled' => $school_bell_enabled,
-					'school_bell_description' => $school_bell_description
-				);
+			//set the parameters
+				$parameters['domain_uuid'] = $domain_uuid;
+				$parameters['school_bell_uuid'] = $school_bell_uuid;
+				$parameters['school_bell_name'] = $school_bell_name;
+				$parameters['school_bell_leg_a_type'] = $school_bell_leg_a_type;
+				$parameters['school_bell_leg_a_data'] = $school_bell_leg_a_data;
+				$parameters['school_bell_leg_b_type'] = $school_bell_leg_b_type;
+				$parameters['school_bell_leg_b_data'] = $school_bell_leg_b_data;
+				$parameters['school_bell_ring_timeout'] = $school_bell_ring_timeout;
+				$parameters['school_bell_min'] = $school_bell_min;
+				$parameters['school_bell_hour'] = $school_bell_hour;
+				$parameters['school_bell_dom'] = $school_bell_dom;
+				$parameters['school_bell_mon'] = $school_bell_mon;
+				$parameters['school_bell_dow'] = $school_bell_dow;
+				$parameters['school_bell_timezone'] = $school_bell_timezone;
+				$parameters['school_bell_enabled'] = $school_bell_enabled;
+				$parameters['school_bell_description'] = $school_bell_description;
+				$parameters['insert_user'] = $_SESSION['user_uuid'] ?? null;
+				$parameters['update_user'] = $_SESSION['user_uuid'] ?? null;
 
-				$prep_statement = $db->prepare($sql);
-				$prep_statement->execute(array_values($insert_array));
+			//execute the insert
+				$database->execute($sql, $parameters);
+				unset($sql, $parameters);
 
-				unset($sql, $prep_statement, $insert_array);
-
-				message::add($text['label-add-complete']);
-				header("Location: school_bells.php");
+			//set the message and redirect the user
+				$_SESSION['message'] = $text['message-add'];
+				header('Location: school_bells.php'.($query_string ? '?'.$query_string : ''));
 				return;
-			} //if ($action == "add")
 
-			if ($action == "update") {
+		} //if ($action == "add")
 
+		if ($action == 'update') {
+
+			//update the record, scoped to the current domain with bound parameters
 				$sql = "UPDATE v_school_bells SET ";
 				$sql .= "school_bell_name = :school_bell_name, ";
 				$sql .= "school_bell_leg_a_type = :school_bell_leg_a_type, ";
@@ -219,368 +296,322 @@
 				$sql .= "school_bell_dow = :school_bell_dow, ";
 				$sql .= "school_bell_timezone = :school_bell_timezone, ";
 				$sql .= "school_bell_enabled = :school_bell_enabled, ";
-				$sql .= "school_bell_description = :school_bell_description";
-				$sql .= " WHERE domain_uuid = :domain_uuid";
-				$sql .= " AND school_bell_uuid = :school_bell_uuid";
+				$sql .= "school_bell_description = :school_bell_description, ";
+				$sql .= "update_date = now(), ";
+				$sql .= "update_user = :update_user ";
+				$sql .= "WHERE domain_uuid = :domain_uuid ";
+				$sql .= "AND school_bell_uuid = :school_bell_uuid";
 
-				$prep_statement = $db->prepare($sql);
+			//set the parameters
+				$parameters['school_bell_name'] = $school_bell_name;
+				$parameters['school_bell_leg_a_type'] = $school_bell_leg_a_type;
+				$parameters['school_bell_leg_a_data'] = $school_bell_leg_a_data;
+				$parameters['school_bell_leg_b_type'] = $school_bell_leg_b_type;
+				$parameters['school_bell_leg_b_data'] = $school_bell_leg_b_data;
+				$parameters['school_bell_ring_timeout'] = $school_bell_ring_timeout;
+				$parameters['school_bell_min'] = $school_bell_min;
+				$parameters['school_bell_hour'] = $school_bell_hour;
+				$parameters['school_bell_dom'] = $school_bell_dom;
+				$parameters['school_bell_mon'] = $school_bell_mon;
+				$parameters['school_bell_dow'] = $school_bell_dow;
+				$parameters['school_bell_timezone'] = $school_bell_timezone;
+				$parameters['school_bell_enabled'] = $school_bell_enabled;
+				$parameters['school_bell_description'] = $school_bell_description;
+				$parameters['update_user'] = $_SESSION['user_uuid'] ?? null;
+				$parameters['domain_uuid'] = $domain_uuid;
+				$parameters['school_bell_uuid'] = $school_bell_uuid;
 
-				$prep_statement->bindValue('school_bell_name', $school_bell_name);
-				$prep_statement->bindValue('school_bell_leg_a_type', $school_bell_leg_a_type);
-				$prep_statement->bindValue('school_bell_leg_a_data', $school_bell_leg_a_data);
-				$prep_statement->bindValue('school_bell_leg_b_type', $school_bell_leg_b_type);
-				$prep_statement->bindValue('school_bell_leg_b_data', $school_bell_leg_b_data);
-				$prep_statement->bindValue('school_bell_ring_timeout', $school_bell_ring_timeout);
-				$prep_statement->bindValue('school_bell_min', $school_bell_min);
-				$prep_statement->bindValue('school_bell_hour', $school_bell_hour);
-				$prep_statement->bindValue('school_bell_dom', $school_bell_dom);
-				$prep_statement->bindValue('school_bell_mon', $school_bell_mon);
-				$prep_statement->bindValue('school_bell_dow', $school_bell_dow);
-				$prep_statement->bindValue('school_bell_timezone', $school_bell_timezone);
-				$prep_statement->bindValue('school_bell_enabled', $school_bell_enabled);
-				$prep_statement->bindValue('school_bell_description', $school_bell_description);
-				$prep_statement->bindValue('domain_uuid', $domain_uuid);
-				$prep_statement->bindValue('school_bell_uuid', $school_bell_uuid);
+			//execute the update
+				$database->execute($sql, $parameters);
+				unset($sql, $parameters);
 
-				if ($prep_statement) {
-					$prep_statement->execute();
-				}
-				unset($sql, $prep_statement);
-
-				message::add($text['label-update-complete']);
-				header("Location: school_bells.php");
+			//set the message and redirect the user
+				$_SESSION['message'] = $text['message-update'];
+				header('Location: school_bells.php'.($query_string ? '?'.$query_string : ''));
 				return;
-			} //if ($action == "update")
-		} //if ($_POST["persistformvar"] != "true")
+
+		} //if ($action == "update")
 	} //(count($_POST)>0 && strlen($_POST["persistformvar"]) == 0)
 
 //pre-populate the form
-	if (count($_GET) > 0 && $_POST["persistformvar"] != "true" && isset($_GET["id"]) && is_uuid($_GET["id"])) {
-		$school_bell_uuid = $_GET["id"];
+	if (isset($_GET["id"]) && is_uuid($_GET["id"]) && (empty($_POST['persistformvar']) || $_POST['persistformvar'] != 'true')) {
+		$school_bell_uuid = $_GET['id'];
 		$sql = "SELECT * FROM v_school_bells";
 		$sql .= " WHERE domain_uuid = :domain_uuid";
 		$sql .= " AND school_bell_uuid = :school_bell_uuid";
 		$sql .= " LIMIT 1";
-
-		$prep_statement = $db->prepare($sql);
-
-		$prep_statement->bindValue('domain_uuid', $domain_uuid);
-		$prep_statement->bindValue('school_bell_uuid', $school_bell_uuid);
-
-		$prep_statement->execute();
-		$result = $prep_statement->fetchAll();
-
-		foreach ($result as &$row) {
-			$school_bell_name = $row["school_bell_name"];
-			$school_bell_leg_a_type = $row["school_bell_leg_a_type"];
-			$school_bell_leg_a_data = $row["school_bell_leg_a_data"];
-			$school_bell_leg_b_type = $row["school_bell_leg_b_type"];
-			$school_bell_leg_b_data = $row["school_bell_leg_b_data"];
-			$school_bell_min = $row["school_bell_min"];
-			$school_bell_hour = $row["school_bell_hour"];
-			$school_bell_dom = $row["school_bell_dom"];
-			$school_bell_mon = $row["school_bell_mon"];
-			$school_bell_dow = $row["school_bell_dow"];
-			$school_bell_timezone = $row["school_bell_timezone"];
-			$school_bell_enabled = $row["school_bell_enabled"];
-			$school_bell_description = $row["school_bell_description"];
-			break; //limit to 1 row ? Should be only 1 result at all
+		$parameters['domain_uuid'] = $domain_uuid;
+		$parameters['school_bell_uuid'] = $school_bell_uuid;
+		$row = $database->select($sql, $parameters, 'row');
+		if (!empty($row)) {
+			$school_bell_name = $row['school_bell_name'];
+			$school_bell_leg_a_type = $row['school_bell_leg_a_type'];
+			$school_bell_leg_a_data = $row['school_bell_leg_a_data'];
+			$school_bell_leg_b_type = $row['school_bell_leg_b_type'];
+			$school_bell_leg_b_data = $row['school_bell_leg_b_data'];
+			$school_bell_ring_timeout = (int)$row['school_bell_ring_timeout'];
+			$school_bell_min = (int)$row['school_bell_min'];
+			$school_bell_hour = (int)$row['school_bell_hour'];
+			$school_bell_dom = (int)$row['school_bell_dom'];
+			$school_bell_mon = (int)$row['school_bell_mon'];
+			$school_bell_dow = (int)$row['school_bell_dow'];
+			$school_bell_timezone = $row['school_bell_timezone'];
+			$school_bell_enabled = school_bells::is_enabled($row['school_bell_enabled'] ?? null) ? 'true' : 'false';
+			$school_bell_description = $row['school_bell_description'];
 		}
-		unset ($prep_statement, $sql);
+		unset($sql, $parameters, $row);
 	}
 
-	//get the recordings
-	$sql = "SELECT recording_name, recording_filename FROM v_recordings";
-	$sql .= " WHERE domain_uuid = :domain_uuid";
-	$sql .= " ORDER BY recording_name ASC";
-	$prep_statement = $db->prepare($sql);
-	$prep_statement->bindValue('domain_uuid', $domain_uuid);
-	$prep_statement->execute();
-	$recordings = $prep_statement->fetchAll(PDO::FETCH_ASSOC);
+//get the recordings
+	$sql = "SELECT recording_name, recording_filename FROM v_recordings ";
+	$sql .= "WHERE domain_uuid = :domain_uuid ";
+	$sql .= "ORDER BY recording_name ASC";
+	$parameters['domain_uuid'] = $domain_uuid;
+	$recordings = $database->select($sql, $parameters, 'all');
+	unset($sql, $parameters);
 
-	//get the phrases
-	// $sql = "SELECT * FROM v_phrases ";
-	// $sql .= " WHERE (domain_uuid = :domain_uuid OR domain_uuid IS NULL) ";
-	// $prep_statement = $db->prepare(check_sql($sql));
-	// $prep_statement->bindValue('domain_uuid', $domain_uuid);
-	// $prep_statement->execute();
-	// $phrases = $prep_statement->fetchAll(PDO::FETCH_NAMED);
-
-	//get the sound files
-	$file = new file;
-	$sound_files = $file->sounds();
-
-	$school_bell_selector = new school_bell_selector($_SESSION['domain']['time_format']['text'] == '12h');
-
-	// One of defaults
-	if (strlen($school_bell_timezone) == 0) {
-		$school_bell_timezone = date_default_timezone_get();
-	}
+//build the schedule selectors, honoring the time format of the domain
+	$school_bell_selector = new school_bell_selector(($settings->get('domain', 'time_format', '24h') == '12h'));
 
 //create token
 	$object = new token;
 	$token = $object->create($_SERVER['PHP_SELF']);
 
 //show the header
+	$document['title'] = $action == 'add' ? $text['title-school_bells-add'] : $text['title-school_bells-edit'];
 	require_once "resources/header.php";
 
 //show the content
-	echo "<form method='post' name='frm' action=''>\n";
+	echo "<form method='post' name='frm' id='frm' action=''>\n";
+
+	echo "<div class='action_bar' id='action_bar'>\n";
+	echo "	<div class='heading'><b>".($action == 'add' ? $text['title-school_bells-add'] : $text['title-school_bells-edit'])."</b></div>\n";
+	echo "	<div class='actions'>\n";
+	echo button::create(['type'=>'button','label'=>$text['button-back'],'icon'=>$settings->get('theme', 'button_icon_back'),'id'=>'btn_back','style'=>'margin-right: 15px;','link'=>'school_bells.php'.($query_string ? '?'.$query_string : '')]);
+	if ($action == 'update' && permission_exists('school_bell_delete')) {
+		echo button::create(['type'=>'button','label'=>$text['button-delete'],'icon'=>$settings->get('theme', 'button_icon_delete'),'name'=>'btn_delete','style'=>'margin-right: 15px;','onclick'=>"modal_open('modal-delete','btn_delete');"]);
+	}
+	echo button::create(['type'=>'submit','label'=>$text['button-save'],'icon'=>$settings->get('theme', 'button_icon_save'),'id'=>'btn_save','name'=>'action','value'=>'save']);
+	echo "	</div>\n";
+	echo "	<div style='clear: both;'></div>\n";
+	echo "</div>\n";
+
+	if ($action == 'update' && permission_exists('school_bell_delete')) {
+		echo modal::create(['id'=>'modal-delete','type'=>'delete','actions'=>button::create(['type'=>'submit','label'=>$text['button-continue'],'icon'=>'check','id'=>'btn_delete','style'=>'float: right; margin-left: 15px;','collapse'=>'never','name'=>'action','value'=>'delete','onclick'=>"modal_close();"])]);
+	}
+
+	echo "<div class='card'>\n";
 	echo "<table width='100%' border='0' cellpadding='0' cellspacing='0'>\n";
-	echo "<tr>\n";
-	if ($action == "add") {
-		echo "<td align='left' width='30%' nowrap='nowrap'><b>".$text['label-school_bells-add']."</b></td>\n";
-	}
-	if ($action == "update") {
-		echo "<td align='left' width='30%' nowrap='nowrap'><b>".$text['label-school_bells-edit']."</b></td>\n";
-	}
-	echo "<td width='70%' align='right'>";
-	echo "	<input type='button' class='btn' name='' alt='".$text['button-back']."' onclick=\"window.location='school_bells.php'\" value='".$text['button-back']."'>";
-	echo "	<input type='submit' name='submit' class='btn' value='".$text['button-save']."'>\n";
-	echo "</td>\n";
-	echo "</tr>\n";
-	echo "<tr>\n";
-	echo "<td align='left' colspan='2'>\n";
-	if ($action == "add") {
-		echo $text['label-school_bells-add-note']."<br /><br />\n";
-	}
-	if ($action == "update") {
-		echo $text['label-school_bells-edit-note']."<br /><br />\n";
-	}
-	echo "</td>\n";
-	echo "</tr>\n";
 
-	// Show name
-	echo "<tr>\n";
-	echo "<td class='vncellreq' valign='top' align='left' nowrap='nowrap'>\n";
-	echo "	".$text['label-school_bell_name']."\n";
-	echo "</td>\n";
-	echo "<td class='vtable' align='left'>\n";
-	echo "	<input class='formfld' type='text' name='school_bell_name' maxlength='255' value=\"".escape($school_bell_name)."\" required='required'>\n";
-	echo "<br />\n";
-	echo $text['description-school_bell_name']."\n";
-	echo "</td>\n";
-	echo "</tr>\n";
+	//show the name
+		echo "<tr>\n";
+		echo "<td width='30%' class='vncellreq' valign='top' align='left' nowrap='nowrap'>\n";
+		echo "	".$text['label-school_bell_name']."\n";
+		echo "</td>\n";
+		echo "<td width='70%' class='vtable' align='left'>\n";
+		echo "	<input class='formfld' type='text' name='school_bell_name' maxlength='255' value=\"".escape($school_bell_name)."\" required='required'>\n";
+		echo "<br />\n";
+		echo $text['description-school_bell_name']."\n";
+		echo "</td>\n";
+		echo "</tr>\n";
 
-	// Show school_bell_leg_a_data
-	echo "<tr>\n";
-	echo "<td class='vncellreq' valign='top' align='left' nowrap='nowrap'>\n";
-	echo "	".$text['label-school_bell_leg_a_data']."\n";
-	echo "</td>\n";
-	echo "<td class='vtable' align='left'>\n";
-	echo "	<input class='formfld' type='text' name='school_bell_leg_a_data' maxlength='255' value=\"".escape($school_bell_leg_a_data)."\" required='required'>\n";
-	echo "<br />\n";
-	echo $text['description-school_bell_leg_a_data']."\n";
-	echo "</td>\n";
-	echo "</tr>\n";
+	//show the called extension
+		echo "<tr>\n";
+		echo "<td class='vncellreq' valign='top' align='left' nowrap='nowrap'>\n";
+		echo "	".$text['label-school_bell_leg_a_data']."\n";
+		echo "</td>\n";
+		echo "<td class='vtable' align='left'>\n";
+		echo "	<input class='formfld' type='text' name='school_bell_leg_a_data' maxlength='255' value=\"".escape($school_bell_leg_a_data)."\" required='required'>\n";
+		echo "<br />\n";
+		echo $text['description-school_bell_leg_a_data']."\n";
+		echo "</td>\n";
+		echo "</tr>\n";
 
-	// Show ring timeout
-	echo "<tr>\n";
-	echo "<td class='vncellreq' valign='top' align='left' nowrap='nowrap'>\n";
-	echo "	".$text['label-school_bell_ring_timeout']."\n";
-	echo "</td>\n";
-	echo "<td class='vtable' align='left'>\n";
-	echo "	<input class='formfld' type='number' name='school_bell_ring_timeout' min='0' max='3600' value=\"".escape($school_bell_ring_timeout)."\">\n";
-	echo "<br />\n";
-	echo $text['description-school_bell_ring_timeout']."\n";
-	echo "</td>\n";
-	echo "</tr>\n";
+	//show the ring timeout
+		echo "<tr>\n";
+		echo "<td class='vncellreq' valign='top' align='left' nowrap='nowrap'>\n";
+		echo "	".$text['label-school_bell_ring_timeout']."\n";
+		echo "</td>\n";
+		echo "<td class='vtable' align='left'>\n";
+		echo "	<input class='formfld' type='number' name='school_bell_ring_timeout' min='0' max='3600' value=\"".escape($school_bell_ring_timeout)."\">\n";
+		echo "<br />\n";
+		echo $text['description-school_bell_ring_timeout']."\n";
+		echo "</td>\n";
+		echo "</tr>\n";
 
-	// Show school_bell_leg_b_data
-	echo "<tr>\n";
-	echo "<td class='vncellreq' valign='top' align='left' nowrap>\n";
-	echo "	".$text['label-school_bell_leg_b_data']."\n";
-	echo "</td>\n";
-	echo "<td class='vtable' align='left'>\n";
-	echo "<select name='school_bell_leg_b_data' id='school_bell_leg_b_data' class='formfld'>\n";
-	echo "	<option></option>\n";
-	//recordings
-	$tmp_selected = false;
-	if (is_array($recordings)) {
-		echo "<optgroup label='Recordings'>\n";
-		foreach ($recordings as &$row) {
-			$recording_name = $row["recording_name"];
-			$recording_filename = $row["recording_filename"];
-			if ($school_bell_leg_b_data == $_SESSION['switch']['recordings']['dir']."/".$_SESSION['domain_name']."/".$recording_filename && strlen($school_bell_leg_b_data) > 0) {
-				$tmp_selected = true;
-				echo "	<option value='".escape($_SESSION['switch']['recordings']['dir'])."/".escape($_SESSION['domain_name'])."/".escape($recording_filename)."' selected='selected'>".escape($recording_name)."</option>\n";
+	//show the recording to play when the extension answers
+		echo "<tr>\n";
+		echo "<td class='vncell' valign='top' align='left' nowrap='nowrap'>\n";
+		echo "	".$text['label-school_bell_leg_b_data']."\n";
+		echo "</td>\n";
+		echo "<td class='vtable' align='left'>\n";
+		echo "	<select name='school_bell_leg_b_data' id='school_bell_leg_b_data' class='formfld'>\n";
+		echo "		<option value=''></option>\n";
+		$tmp_selected = false;
+		if (!empty($recordings) && is_array($recordings)) {
+			echo "	<optgroup label='".$text['label-recordings']."'>\n";
+			foreach ($recordings as $row) {
+				$full_path = $recordings_dir."/".$row['recording_filename'];
+				if (strlen($school_bell_leg_b_data ?? '') > 0 && $school_bell_leg_b_data == $full_path) {
+					$tmp_selected = true;
+					echo "		<option value='".escape($full_path)."' selected='selected'>".escape($row['recording_name'])."</option>\n";
+				}
+				else if (strlen($school_bell_leg_b_data ?? '') > 0 && $school_bell_leg_b_data == $row['recording_filename']) {
+					$tmp_selected = true;
+					echo "		<option value='".escape($row['recording_filename'])."' selected='selected'>".escape($row['recording_name'])."</option>\n";
+				}
+				else {
+					echo "		<option value='".escape($row['recording_filename'])."'>".escape($row['recording_name'])."</option>\n";
+				}
 			}
-			else if ($school_bell_leg_b_data == $recording_filename && strlen($school_bell_leg_b_data) > 0) {
-				$tmp_selected = true;
-				echo "	<option value='".escape($recording_filename)."' selected='selected'>".escape($recording_name)."</option>\n";
-			}
-			else {
-				echo "	<option value='".escape($recording_filename)."'>".escape($recording_name)."</option>\n";
-			}
+			echo "	</optgroup>\n";
 		}
-		echo "</optgroup>\n";
-	}
 
-	if (if_group("superadmin")) {
-		if (!$tmp_selected && strlen($school_bell_leg_b_data) > 0) {
-			echo "<optgroup label='Selected'>\n";
-			if (file_exists($_SESSION['switch']['recordings']['dir']."/".$_SESSION['domain_name']."/".$school_bell_leg_b_data)) {
-				echo "	<option value='".escape($_SESSION['switch']['recordings']['dir'])."/".escape($_SESSION['domain_name'])."/".escape($school_bell_leg_b_data)."' selected='selected'>".escape($school_bell_leg_b_data)."</option>\n";
+		//show the stored value when it is not in the list of recordings so it is never lost
+			if (!$tmp_selected && if_group("superadmin") && strlen($school_bell_leg_b_data ?? '') > 0) {
+				echo "	<optgroup label='".$text['label-selected']."'>\n";
+				echo "		<option value='".escape($school_bell_leg_b_data)."' selected='selected'>".escape($school_bell_leg_b_data)."</option>\n";
+				echo "	</optgroup>\n";
 			}
-			else if (substr($school_bell_leg_b_data, -3) == "wav" || substr($school_bell_leg_b_data, -3) == "mp3") {
-				echo "	<option value='".escape($school_bell_leg_b_data)."' selected='selected'>".escape($school_bell_leg_b_data)."</option>\n";
-			}
-			else {
-				echo "	<option value='".escape($school_bell_leg_b_data)."' selected='selected'>".escape($school_bell_leg_b_data)."</option>\n";
-			}
-			echo "</optgroup>\n";
+
+		echo "	</select>\n";
+		echo "<br />\n";
+		echo $text['description-school_bell_leg_b_data']."\n";
+		echo "</td>\n";
+		echo "</tr>\n";
+
+	//show the schedule divider
+		echo "<tr><td colspan='2'><br /></td></tr>\n";
+
+	//show the minute
+		echo "<tr>\n";
+		echo "<td class='vncell' valign='top' align='left' nowrap='nowrap'>\n";
+		echo "	".$text['label-school_bell_min']."\n";
+		echo "</td>\n";
+		echo "<td class='vtable' align='left'>\n";
+		echo $school_bell_selector->draw_min('school_bell_min', $school_bell_min);
+		echo "<br />\n";
+		echo $text['description-school_bell_min']."\n";
+		echo "</td>\n";
+		echo "</tr>\n";
+
+	//show the hour
+		echo "<tr>\n";
+		echo "<td class='vncell' valign='top' align='left' nowrap='nowrap'>\n";
+		echo "	".$text['label-school_bell_hour']."\n";
+		echo "</td>\n";
+		echo "<td class='vtable' align='left'>\n";
+		echo $school_bell_selector->draw_hou('school_bell_hour', $school_bell_hour);
+		echo "<br />\n";
+		echo $text['description-school_bell_hour']."\n";
+		echo "</td>\n";
+		echo "</tr>\n";
+
+	//show the day of the month
+		echo "<tr>\n";
+		echo "<td class='vncell' valign='top' align='left' nowrap='nowrap'>\n";
+		echo "	".$text['label-school_bell_dom']."\n";
+		echo "</td>\n";
+		echo "<td class='vtable' align='left'>\n";
+		echo $school_bell_selector->draw_dom('school_bell_dom', $school_bell_dom);
+		echo "<br />\n";
+		echo $text['description-school_bell_dom']."\n";
+		echo "</td>\n";
+		echo "</tr>\n";
+
+	//show the month
+		echo "<tr>\n";
+		echo "<td class='vncell' valign='top' align='left' nowrap='nowrap'>\n";
+		echo "	".$text['label-school_bell_mon']."\n";
+		echo "</td>\n";
+		echo "<td class='vtable' align='left'>\n";
+		echo $school_bell_selector->draw_mon('school_bell_mon', $school_bell_mon);
+		echo "<br />\n";
+		echo $text['description-school_bell_mon']."\n";
+		echo "</td>\n";
+		echo "</tr>\n";
+
+	//show the day of the week
+		echo "<tr>\n";
+		echo "<td class='vncell' valign='top' align='left' nowrap='nowrap'>\n";
+		echo "	".$text['label-school_bell_dow']."\n";
+		echo "</td>\n";
+		echo "<td class='vtable' align='left'>\n";
+		echo $school_bell_selector->draw_dow('school_bell_dow', $school_bell_dow);
+		echo "<br />\n";
+		echo $text['description-school_bell_dow']."\n";
+		echo "</td>\n";
+		echo "</tr>\n";
+
+	//show the timezone
+		echo "<tr>\n";
+		echo "<td class='vncell' valign='top' align='left' nowrap='nowrap'>\n";
+		echo "	".$text['label-school_bell_timezone']."\n";
+		echo "</td>\n";
+		echo "<td class='vtable' align='left'>\n";
+		echo "	<select class='formfld' name='school_bell_timezone'>\n";
+		foreach ($timezone_identifiers_list as $timezone_identifier) {
+			echo "		<option value='".escape($timezone_identifier)."' ".(($school_bell_timezone == $timezone_identifier) ? "selected='selected'" : null).">".escape($timezone_identifier)."</option>\n";
 		}
-		unset($tmp_selected);
+		echo "	</select>\n";
+		echo "<br />\n";
+		echo $text['description-school_bell_timezone']."\n";
+		echo "</td>\n";
+		echo "</tr>\n";
+
+	//show the schedule divider
+		echo "<tr><td colspan='2'><br /></td></tr>\n";
+
+	//show the enabled toggle
+		echo "<tr>\n";
+		echo "<td class='vncellreq' valign='top' align='left' nowrap='nowrap'>\n";
+		echo "	".$text['label-school_bell_enabled']."\n";
+		echo "</td>\n";
+		echo "<td class='vtable' align='left'>\n";
+		if ($input_toggle_style_switch) {
+			echo "	<span class='switch'>\n";
+		}
+		echo "		<select class='formfld' id='school_bell_enabled' name='school_bell_enabled'>\n";
+		echo "			<option value='true' ".($school_bell_enabled == 'true' ? "selected='selected'" : null).">".$text['option-true']."</option>\n";
+		echo "			<option value='false' ".($school_bell_enabled != 'true' ? "selected='selected'" : null).">".$text['option-false']."</option>\n";
+		echo "		</select>\n";
+		if ($input_toggle_style_switch) {
+			echo "		<span class='slider'></span>\n";
+			echo "	</span>\n";
+		}
+		echo "<br />\n";
+		echo $text['description-school_bell_enabled']."\n";
+		echo "</td>\n";
+		echo "</tr>\n";
+
+	//show the description
+		echo "<tr>\n";
+		echo "<td class='vncell' valign='top' align='left' nowrap='nowrap'>\n";
+		echo "	".$text['label-school_bell_description']."\n";
+		echo "</td>\n";
+		echo "<td class='vtable' align='left'>\n";
+		echo "	<input class='formfld' type='text' name='school_bell_description' maxlength='255' value=\"".escape($school_bell_description)."\">\n";
+		echo "<br />\n";
+		echo $text['description-school_bell_description']."\n";
+		echo "</td>\n";
+		echo "</tr>\n";
+
+	echo "</table>\n";
+	echo "</div>\n";
+	echo "<br /><br />\n";
+
+//show the schedule help
+	// echo "<div class='card' style='opacity: 0.8;'>\n";
+	// echo $text['description-school_bells_schedule_templates']."\n";
+	// echo "</div>\n";
+	// echo "<br /><br />\n";
+
+	if (!empty($school_bell_uuid)) {
+		echo "<input type='hidden' name='school_bell_uuid' value='".escape($school_bell_uuid)."'>\n";
 	}
+	echo "<input type='hidden' name='".$token['name']."' value='".$token['hash']."'>\n";
 
-	echo "	</select>\n";
-	if (if_group("superadmin")) {
-		echo "<input type='button' id='btn_select_to_input_".escape($destination_id)."' class='btn' name='' alt='back' onclick='changeToInput".escape($destination_id)."(document.getElementById(\"".escape($destination_id)."\"));this.style.visibility = \"hidden\";' value='&#9665;'>";
-		unset($destination_id);
-	}
-	echo "	<br />\n";
-	echo $text['description-school_bell_leg_b_data']."\n";
-	echo "</td>\n";
-	echo "</tr>\n";
-
-	// End school_bell_leg_b_data
-	// Show divider
-	echo "<tr><td colspan='2'><br /></td></tr>\n";
-
-	// Show Min
-	echo "<tr>\n";
-	echo "<td class='vncell' valign='top' align='left' nowrap='nowrap'>\n";
-	echo "	".$text['label-school_bell_min']."\n";
-	echo "</td>\n";
-	echo "<td class='vtable' align='left'>\n";
-	echo $school_bell_selector->draw_min('school_bell_min', $school_bell_min);
-	echo "<br />\n";
-	echo $text['description-school_bell_min']."\n";
-	echo "\n";
-	echo "</td>\n";
-	echo "</tr>\n";
-
-	// Show Hour
-	echo "<tr>\n";
-	echo "<td class='vncell' valign='top' align='left' nowrap='nowrap'>\n";
-	echo "	".$text['label-school_bell_hour']."\n";
-	echo "</td>\n";
-	echo "<td class='vtable' align='left'>\n";
-	echo $school_bell_selector->draw_hou('school_bell_hour', $school_bell_hour);
-	echo "<br />\n";
-	echo $text['description-school_bell_hour']."\n";
-	echo "\n";
-	echo "</td>\n";
-	echo "</tr>\n";
-
-	// Show Day of the Month
-	echo "<tr>\n";
-	echo "<td class='vncell' valign='top' align='left' nowrap='nowrap'>\n";
-	echo "	".$text['label-school_bell_dom']."\n";
-	echo "</td>\n";
-	echo "<td class='vtable' align='left'>\n";
-	echo $school_bell_selector->draw_dom('school_bell_dom', $school_bell_dom);
-	echo "<br />\n";
-	echo $text['description-school_bell_dom']."\n";
-	echo "\n";
-	echo "</td>\n";
-	echo "</tr>\n";
-
-	// Show Month
-	echo "<tr>\n";
-	echo "<td class='vncell' valign='top' align='left' nowrap='nowrap'>\n";
-	echo "	".$text['label-school_bell_mon']."\n";
-	echo "</td>\n";
-	echo "<td class='vtable' align='left'>\n";
-	echo $school_bell_selector->draw_mon('school_bell_mon', $school_bell_mon);
-	echo "<br />\n";
-	echo $text['description-school_bell_mon']."\n";
-	echo "\n";
-	echo "</td>\n";
-	echo "</tr>\n";
-
-	// Show Day of the Week
-	echo "<tr>\n";
-	echo "<td class='vncell' valign='top' align='left' nowrap='nowrap'>\n";
-	echo "	".$text['label-school_bell_dow']."\n";
-	echo "</td>\n";
-	echo "<td class='vtable' align='left'>\n";
-	echo $school_bell_selector->draw_dow('school_bell_dow', $school_bell_dow);
-	echo "<br />\n";
-	echo $text['description-school_bell_dow']."\n";
-	echo "\n";
-	echo "</td>\n";
-	echo "</tr>\n";
-
-	// Show timezone
-	echo "<tr>\n";
-	echo "<td class='vncell' valign='top' align='left' nowrap='nowrap'>\n";
-	echo "	".$text['label-school_bell_timezone']."\n";
-	echo "</td>\n";
-	echo "<td class='vtable' align='left'>\n";
-	echo "	<select class='formfld' name='school_bell_timezone'>\n";
-	foreach ($timezone_identifiers_list as $timezone_identifier) {
-		echo "		<option value='$timezone_identifier' ".(($school_bell_timezone == $timezone_identifier) ? "selected" : null).">".escape($timezone_identifier)."</option>\n";
-	}
-	echo "	</select>\n";
-	echo "<br />\n";
-	echo $text['description-school_bell_timezone']."\n";
-	echo "\n";
-	echo "</td>\n";
-	echo "</tr>\n";
-
-	// Show divider
-	echo "<tr><td colspan='2'><br /></td></tr>\n";
-
-	// Show enabled
-	echo "<tr>\n";
-	echo "<td class='vncell' valign='top' align='left' nowrap='nowrap'>\n";
-	echo "	".$text['label-school_bell_enabled']."\n";
-	echo "</td>\n";
-	echo "<td class='vtable' align='left'>\n";
-	echo "	<select class='formfld' name='school_bell_enabled'>\n";
-	echo "		<option value='true' ".(($school_bell_enabled == "true") ? "selected" : null).">".$text['label-true']."</option>\n";
-	echo "		<option value='false' ".(($school_bell_enabled == "false") ? "selected" : null).">".$text['label-false']."</option>\n";
-	echo "	</select>\n";
-	echo "<br />\n";
-	echo $text['description-school_bell_enabled']."\n";
-	echo "\n";
-	echo "</td>\n";
-	echo "</tr>\n";
-
-	// Show description
-	echo "<tr>\n";
-	echo "<td class='vncellreq' valign='top' align='left' nowrap='nowrap'>\n";
-	echo "	".$text['label-school_bell_description']."\n";
-	echo "</td>\n";
-	echo "<td class='vtable' align='left'>\n";
-	echo "	<input class='formfld' type='text' name='school_bell_description' maxlength='255' value=\"".escape($school_bell_description)."\">\n";
-	echo "<br />\n";
-	echo $text['description-school_bell_description']."\n";
-	echo "</td>\n";
-	echo "</tr>\n";
-
-	echo "	<tr>\n";
-	echo "		<td colspan='2' align='right'>\n";
-	if ($action == "update") {
-		echo "		<input type='hidden' name='id' value='".escape($school_bell_uuid)."'>\n";
-	}
-	echo "		<input type='hidden' name='".$token['name']."' value='".$token['hash']."'>\n";
-	echo "			<br>";
-	echo "			<input type='submit' name='submit' class='btn' value='".$text['button-save']."'>\n";
-	echo "		</td>\n";
-	echo "	</tr>";
-	echo "</table>";
-	echo "<br><br>";
 	echo "</form>";
-
-	echo "<table>";
-	echo "<tr>";
-	echo "<td>";
-	echo $text['description-school_bells_schedule_templates'];
-	echo "</td>";
-	echo "</tr>";
-	echo "</table>";
 
 //include the footer
 	require_once "resources/footer.php";

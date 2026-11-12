@@ -13,6 +13,8 @@ $text['label-school_bell_name']['en-us'] = "Name";
 $text['label-school_bell_leg_a_data']['en-us'] = "Called Extension";
 
 $text['label-school_bell_leg_b_data']['en-us'] = "Call Answer Action";
+$text['label-selected']['en-us'] = "Selected";
+$text['label-selected']['en-gb'] = "Selected";
 
 $text['label-school_bell_schedule_time']['en-us'] = "Schedule";
 
